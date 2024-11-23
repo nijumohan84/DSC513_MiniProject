@@ -1,0 +1,614 @@
+---
+title: "Mini Project"
+author: "2024MCS120015 NijumohanRathnalayam"
+date: "2024-11-16"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+  pdf_document: default
+---
+
+\newpage
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Objective
+We are provided the following datasets for this mini-project.
+
+* Hourly and daily air quality data from air quality monitoring stations spread across India.
+
+* Weather data from various cities across India including the geo-location of the stations.
+
+In this mini-project, I intend to perform a detailed analysis of these datasets to answer the following questions:
+
+* Is there a pattern in the change of temperature year over year? Can we observe signs of global warming in this dataset?
+
+* Is there a pattern change in rainfall year over year?
+
+* Which cities have the worst air pollution in India? Is the air pollution in these cities becoming better or worse in the observation period?
+
+* Is it possible to identify a time of the year that is best to visit each city considering air pollution and weather parameters?
+
+* Is there a correlation between weather and air pollution?
+
+## Preliminary analysis
+In this segment, we will have a closer look at the datasets. We will analyze what data points are available for which time range. We will also look for missing data and anomalies and handle these.
+Let's start by loading the necessary libraries. We will use the following R libraries:
+
+* tidyverse
+
+* lubridate
+
+* ggplot2
+
+* leaflet
+
+* naniar
+
+* visdat
+
+* simputation
+
+* mosaic
+
+* mosaicData
+
+* rpart
+
+* forcats
+
+```{r load libraries, echo=TRUE,eval=TRUE}
+# Load necessary libraries
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+library(leaflet)
+library(simputation)
+library(mosaic)
+library(mosaicData)
+library(rpart)
+library(forcats)
+
+#missing data
+library(naniar)
+library(visdat)
+```
+
+### Importing the provided datasets
+Now, we will import the provided datasets. The first dataset is the geo-location of the weather stations.
+```{r import geolocation, echo=TRUE,eval=TRUE}
+Station_GeoLocation <- read_csv("MiniProjectDatasets/Temperature_And_Precipitation_Cities_IN/Station_GeoLocation_Longitute_Latitude_Elevation_EPSG_4326.csv")
+
+leaflet(options = leafletOptions(minZoom = 4, maxZoom = 4)) %>%
+  addProviderTiles("OpenStreetMap.Mapnik") %>%
+setView(mean(Station_GeoLocation$longitude),
+mean(Station_GeoLocation$Latitude),zoom = 4) %>%
+addCircleMarkers(data=Station_GeoLocation, radius = 3)
+```
+As we can see, the data provided to us is from various weather stations spread across India.
+
+Now, we will import the weather datasets for these cities.
+```{r import weather data, echo=TRUE,eval=TRUE}
+weather_data_blr <- read_csv("MiniProjectDatasets/Temperature_And_Precipitation_Cities_IN/Bangalore_1990_2022_BangaloreCity.csv")
+weather_data_cni <- read_csv("MiniProjectDatasets/Temperature_And_Precipitation_Cities_IN/Chennai_1990_2022_Madras.csv")
+weather_data_dlh <- read_csv("MiniProjectDatasets/Temperature_And_Precipitation_Cities_IN/Delhi_NCR_1990_2022_Safdarjung.csv")
+weather_data_lkn <- read_csv("MiniProjectDatasets/Temperature_And_Precipitation_Cities_IN/Lucknow_1990_2022.csv")
+weather_data_mbi <- read_csv("MiniProjectDatasets/Temperature_And_Precipitation_Cities_IN/Mumbai_1990_2022_Santacruz.csv")
+weather_data_rjn <- read_csv("MiniProjectDatasets/Temperature_And_Precipitation_Cities_IN/Rajasthan_1990_2022_Jodhpur.csv")
+weather_data_bbr <- read_csv("MiniProjectDatasets/Temperature_And_Precipitation_Cities_IN/weather_Bhubhneshwar_1990_2022.csv")
+weather_data_rkl <- read_csv("MiniProjectDatasets/Temperature_And_Precipitation_Cities_IN/weather_Rourkela_2021_2022.csv")
+```
+
+Now, we will import the pollution datasets.
+```{r import pollution data, echo=TRUE,eval=TRUE}
+aqi_data <- read_csv("MiniProjectDatasets/Air_Quality/city_day.csv")
+```
+### Inspect the datasets
+We will inspect the provided datasets and see what data is available.
+```{r inspect weather head, echo=TRUE,eval=TRUE}
+head(weather_data_blr)
+head(weather_data_cni)
+head(weather_data_dlh)
+head(weather_data_lkn)
+head(weather_data_mbi)
+head(weather_data_rkl)
+```
+As we can see, the provided datasets have various weather parameters such as minimum, maximum and average temperatures per day, wind speed etc for each city. There is one data point per day, the date is given in the column titled time as a character string. We will convert this column to the correct date format. We will also add a column with the city name to the datasets so that we can later combine these datasets and still have the location information corresponding to each dataset.
+```{r convert to date format, echo=TRUE, eval=TRUE}
+weather_data_blr$Date <- as_date(weather_data_blr$time, format = "%d-%m-%Y")
+weather_data_blr <- weather_data_blr %>% mutate(City="Bengaluru")
+weather_data_cni$Date <- as.Date(weather_data_cni$time, format = "%d-%m-%Y")
+weather_data_cni <- weather_data_cni %>% mutate(City="Chennai")
+weather_data_dlh$Date <- as.Date(weather_data_dlh$time, format = "%d-%m-%Y")
+weather_data_dlh <- weather_data_dlh %>% mutate(City="Delhi")
+weather_data_lkn$Date <- as.Date(weather_data_lkn$time, format = "%d-%m-%Y")
+weather_data_lkn <- weather_data_lkn %>% mutate(City="Lucknow")
+weather_data_mbi$Date <- as.Date(weather_data_mbi$time, format = "%d-%m-%Y")
+weather_data_mbi <- weather_data_mbi %>% mutate(City="Mumbai")
+weather_data_rkl$Date <- as.Date(weather_data_rkl$time, format = "%d-%m-%Y")
+weather_data_rkl <- weather_data_rkl %>% mutate(City="Rourkela")
+```
+We will do the same analysis with the pollution data as well.
+```{r inspect pollution head, echo=TRUE,eval=TRUE}
+head(aqi_data)
+```
+Pollution data already has date in the correct format; so there is no need to convert.
+
+### Handle missing data
+We will now check if there are any missing data points in the given dataset and handle them in an appropriate manner.
+```{r check for missing data, echo=TRUE,eval=TRUE}
+any_na(aqi_data)
+any_na(weather_data_blr)
+any_na(weather_data_cni)
+any_na(weather_data_dlh)
+any_na(weather_data_lkn)
+any_na(weather_data_mbi)
+any_na(weather_data_rkl)
+
+miss_var_summary(aqi_data)
+miss_var_summary(weather_data_blr)
+miss_var_summary(weather_data_cni)
+miss_var_summary(weather_data_dlh)
+miss_var_summary(weather_data_lkn)
+miss_var_summary(weather_data_mbi)
+miss_var_summary(weather_data_rkl)
+```
+
+As we can see, there is missing data in every dataset provided. We will be working with AQI data for pollution and average temperature from the weather datasets. These have minimal missing percentage. Therefore, we can fill the missing data points and use these datasets. We will also use precipitation from weather dataset. This has a missingness precentage of about 40%. We will try to fill the missing precipitation data by imputing.  We can also visually analyse this by plotting the missingness as a scatterplot.
+
+```{r visualize missing data, echo=TRUE,eval=TRUE}
+weather_data_blr_shadow <- bind_shadow(weather_data_blr)
+
+ggplot(weather_data_blr_shadow, aes(x = Date, y = tavg, color = tavg_NA)) +
+  geom_point() +
+  labs(title = "Scatterplot with Missingness Indicator for average temperature in Bangalore")
+
+ggplot(weather_data_blr_shadow, aes(x = Date, y = prcp, color = prcp_NA)) +
+  geom_point() +
+  labs(title = "Scatterplot with Missingness Indicator for precipitation in Bangalore")
+
+
+weather_data_cni_shadow <- bind_shadow(weather_data_cni)
+
+ggplot(weather_data_cni_shadow, aes(x = Date, y = tavg, color = tavg_NA)) +
+  geom_point() +
+  labs(title = "Scatterplot with Missingness Indicator for average temperature in Chennai")
+
+ggplot(weather_data_cni_shadow, aes(x = Date, y = prcp, color = prcp_NA)) +
+  geom_point() +
+  labs(title = "Scatterplot with Missingness Indicator for precipitation in Chennai")
+
+
+weather_data_dlh_shadow <- bind_shadow(weather_data_dlh)
+
+ggplot(weather_data_dlh_shadow, aes(x = Date, y = tavg, color = tavg_NA)) +
+  geom_point() +
+  labs(title = "Scatterplot with Missingness Indicator for average temperature in Delhi")
+
+ggplot(weather_data_dlh_shadow, aes(x = Date, y = prcp, color = prcp_NA)) +
+  geom_point() +
+  labs(title = "Scatterplot with Missingness Indicator for precipitation in Delhi")
+
+
+weather_data_lkn_shadow <- bind_shadow(weather_data_lkn)
+
+ggplot(weather_data_lkn_shadow, aes(x = Date, y = tavg, color = tavg_NA)) +
+  geom_point() +
+  labs(title = "Scatterplot with Missingness Indicator for average temperature in Lucknow")
+
+ggplot(weather_data_lkn_shadow, aes(x = Date, y = prcp, color = prcp_NA)) +
+  geom_point() +
+  labs(title = "Scatterplot with Missingness Indicator for precipitation in Lucknow")
+
+
+weather_data_mbi_shadow <- bind_shadow(weather_data_mbi)
+
+ggplot(weather_data_mbi_shadow, aes(x = Date, y = tavg, color = tavg_NA)) +
+  geom_point() +
+  labs(title = "Scatterplot with Missingness Indicator for average temperature in Mumbai")
+
+ggplot(weather_data_mbi_shadow, aes(x = Date, y = prcp, color = prcp_NA)) +
+  geom_point() +
+  labs(title = "Scatterplot with Missingness Indicator for precipiation in Mumbai")
+
+
+weather_data_rkl_shadow <- bind_shadow(weather_data_rkl)
+
+ggplot(weather_data_rkl_shadow, aes(x = Date, y = tavg, color = tavg_NA)) +
+  geom_point() +
+  labs(title = "Scatterplot with Missingness Indicator for average temperature in Rourkela")
+
+ggplot(weather_data_rkl_shadow, aes(x = Date, y = prcp, color = prcp_NA)) +
+  geom_point() +
+  labs(title = "Scatterplot with Missingness Indicator for precipitation in Rourkela")
+
+
+aqi_data_shadow <- bind_shadow(aqi_data)
+
+ggplot(aqi_data_shadow, aes(x = Date, y = AQI, color = AQI_NA)) +
+  geom_point() +
+  labs(title = "Scatterplot with Missingness Indicator for AQI")
+```
+
+Since the number of missing data points is minimal for the data that we are interested in, we will impute the data using Linear Regression Model Imputation method.
+
+```{r impute data, echo=TRUE,eval=TRUE}
+aqi_data <-  impute_lm(aqi_data, AQI ~ NO + NO2)
+weather_data_blr <- weather_data_blr %>% impute_lm(tavg ~ Date)
+weather_data_cni <- weather_data_cni %>% impute_lm(tavg ~ Date)
+weather_data_dlh <- weather_data_dlh %>% impute_lm(tavg ~ Date)
+weather_data_lkn <- weather_data_lkn %>% impute_lm(tavg ~ Date)
+weather_data_mbi <- weather_data_mbi %>% impute_lm(tavg ~ Date)
+weather_data_rkl <- weather_data_rkl %>% impute_lm(tavg ~ Date)
+
+weather_data_blr <- weather_data_blr %>% impute_lm(prcp ~ tavg)
+weather_data_cni <- weather_data_cni %>% impute_lm(prcp ~ tavg)
+weather_data_dlh <- weather_data_dlh %>% impute_lm(prcp ~ tavg)
+weather_data_lkn <- weather_data_lkn %>% impute_lm(prcp ~ tavg)
+weather_data_mbi <- weather_data_mbi %>% impute_lm(prcp ~ tavg)
+weather_data_rkl <- weather_data_rkl %>% impute_lm(prcp ~ tavg)
+```
+
+We will drop the data points where the data that we are interested is still missing.
+```{r drop NA, echo=TRUE,eval=TRUE}
+aqi_data <-  aqi_data %>% drop_na(AQI)
+weather_data_blr <- weather_data_blr %>% drop_na(tavg)
+weather_data_cni <- weather_data_cni %>% drop_na(tavg)
+weather_data_dlh <- weather_data_dlh %>% drop_na(tavg)
+weather_data_lkn <- weather_data_lkn %>% drop_na(tavg)
+weather_data_mbi <- weather_data_mbi %>% drop_na(tavg)
+weather_data_rkl <- weather_data_rkl %>% drop_na(tavg)
+
+weather_data_blr <- weather_data_blr %>% drop_na(prcp)
+weather_data_cni <- weather_data_cni %>% drop_na(prcp)
+weather_data_dlh <- weather_data_dlh %>% drop_na(prcp)
+weather_data_lkn <- weather_data_lkn %>% drop_na(prcp)
+weather_data_mbi <- weather_data_mbi %>% drop_na(prcp)
+weather_data_rkl <- weather_data_rkl %>% drop_na(prcp)
+```
+
+Now, we have usable datasets for detailed analysis.
+
+## Detailed analysis
+### Patterns in temparature and precipitation change in each city
+We will calculate the annual average temperature in each city and plot it to see if there is a recognizable pattern. We will not consider Rourkela for this analysis due to the limited time range available for this city. First we need to introduce a column for year so that we can group the data points by year. 
+```{r add year column,echo=TRUE,eval=TRUE}
+# Calculate yearly average temperature
+weather_data_blr$year <- as.numeric(format(weather_data_blr$Date, "%Y"))
+weather_data_cni$year <- as.numeric(format(weather_data_cni$Date, "%Y"))
+weather_data_dlh$year <- as.numeric(format(weather_data_dlh$Date, "%Y"))
+weather_data_lkn$year <- as.numeric(format(weather_data_lkn$Date, "%Y"))
+weather_data_mbi$year <- as.numeric(format(weather_data_mbi$Date, "%Y"))
+#weather_data_rkl$year <- as.numeric(format(weather_data_rkl$Date, "%Y"))
+```
+
+Now we will create a dataset with average temperature for each city and plot the trend against time.
+```{r temperature change,echo=TRUE,eval=TRUE}
+
+annual_temp_blr <- weather_data_blr %>%
+  group_by(year) %>%
+  summarise(avg_temp = mean(tavg, na.rm = TRUE))
+
+# Plot the trend
+ggplot(annual_temp_blr, aes(x = year, y = avg_temp)) +
+  geom_line(color = "blue") +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(title = "Annual Average Temperature Trend Bangalore",
+       x = "Year",
+       y = "Average Temperature (°C)") +
+  theme_minimal()
+
+annual_temp_cni <- weather_data_cni %>%
+  group_by(year) %>%
+  summarise(avg_temp = mean(tavg, na.rm = TRUE))
+
+# Plot the trend
+ggplot(annual_temp_cni, aes(x = year, y = avg_temp)) +
+  geom_line(color = "blue") +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(title = "Annual Average Temperature Trend Chennai",
+       x = "Year",
+       y = "Average Temperature (°C)") +
+  theme_minimal()
+
+annual_temp_dlh <- weather_data_dlh %>%
+  group_by(year) %>%
+  summarise(avg_temp = mean(tavg, na.rm = TRUE))
+
+# Plot the trend
+ggplot(annual_temp_dlh, aes(x = year, y = avg_temp)) +
+  geom_line(color = "blue") +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(title = "Annual Average Temperature Trend Delhi",
+       x = "Year",
+       y = "Average Temperature (°C)") +
+  theme_minimal()
+
+annual_temp_lkn <- weather_data_lkn %>%
+  group_by(year) %>%
+  summarise(avg_temp = mean(tavg, na.rm = TRUE))
+
+# Plot the trend
+ggplot(annual_temp_lkn, aes(x = year, y = avg_temp)) +
+  geom_line(color = "blue") +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(title = "Annual Average Temperature Trend Lucknow",
+       x = "Year",
+       y = "Average Temperature (°C)") +
+  theme_minimal()
+
+annual_temp_mbi <- weather_data_mbi %>%
+  group_by(year) %>%
+  summarise(avg_temp = mean(tavg, na.rm = TRUE))
+
+# Plot the trend
+ggplot(annual_temp_mbi, aes(x = year, y = avg_temp)) +
+  geom_line(color = "blue") +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(title = "Annual Average Temperature Trend Mumbai",
+       x = "Year",
+       y = "Average Temperature (°C)") +
+  theme_minimal()
+
+```
+
+As we can see, for every city in the dataset, there is a clear upward trend in the annual average temparature. The most drastic change is observed in Mumbai where the mean temperature has increased by about 1.5°C within a span of 22 years. 
+
+Now, we will do a similar analysis for annual average for precipiation.
+```{r precipitation change,echo=TRUE,eval=TRUE}
+
+annual_prcp_blr <- weather_data_blr %>%
+  group_by(year) %>%
+  summarise(avg_prcp = mean(prcp, na.rm = TRUE), sd_prcp = sd(prcp, na.rm = TRUE))
+
+# Plot the trend
+ggplot(annual_prcp_blr, aes(x = year, y = avg_prcp)) +
+  geom_line(color = "blue") +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(title = "Annual Average of daily precipitation Trend Bangalore",
+       x = "Year",
+       y = "Average of daily precipitation (cm)") +
+  theme_minimal()
+
+annual_prcp_cni <- weather_data_cni %>%
+  group_by(year) %>%
+  summarise(avg_prcp = mean(prcp, na.rm = TRUE), sd_prcp = sd(prcp, na.rm = TRUE))
+
+# Plot the trend
+ggplot(annual_prcp_cni, aes(x = year, y = avg_prcp)) +
+  geom_line(color = "blue") +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(title = "Annual Average of daily precipitation Trend Chennai",
+       x = "Year",
+       y = "Average of daily precipitation (cm)") +
+  theme_minimal()
+
+annual_prcp_dlh <- weather_data_dlh %>%
+  group_by(year) %>%
+  summarise(avg_prcp = mean(prcp, na.rm = TRUE), sd_prcp = sd(prcp, na.rm = TRUE))
+
+# Plot the trend
+ggplot(annual_prcp_dlh, aes(x = year, y = avg_prcp)) +
+  geom_line(color = "blue") +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(title = "Annual Average of daily precipitation Trend Delhi",
+       x = "Year",
+       y = "Average of daily precipitation (cm)") +
+  theme_minimal()
+
+annual_prcp_lkn <- weather_data_lkn %>%
+  group_by(year) %>%
+  summarise(avg_prcp = mean(prcp, na.rm = TRUE), sd_prcp = sd(prcp, na.rm = TRUE))
+
+# Plot the trend
+ggplot(annual_prcp_lkn, aes(x = year, y = avg_prcp)) +
+  geom_line(color = "blue") +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(title = "Annual Average of daily precipitation Trend Lucknow",
+       x = "Year",
+       y = "Average of daily precipitation (cm)") +
+  theme_minimal()
+
+annual_prcp_mbi <- weather_data_mbi %>%
+  group_by(year) %>%
+  summarise(avg_prcp = mean(prcp, na.rm = TRUE), sd_prcp = sd(prcp, na.rm = TRUE))
+
+# Plot the trend
+ggplot(annual_prcp_mbi, aes(x = year, y = avg_prcp)) +
+  geom_line(color = "blue") +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(title = "Annual Average of daily precipitation Trend Mumbai",
+       x = "Year",
+       y = "Average of daily precipitation (cm)") +
+  theme_minimal()
+
+```
+
+As with temperature, the amount of rainfall has also increased for every city analysed. For rainfall, it is also interesting to have a look at the standard deviation year over year.
+
+```{r precipitation sd,echo=TRUE,eval=TRUE}
+
+# Plot the trend
+ggplot(annual_prcp_blr, aes(x = year, y = sd_prcp)) +
+  geom_line(color = "blue") +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(title = "Standard Deviation of daily precipitation Trend Bangalore",
+       x = "Year",
+       y = "Standard Deviationof daily precipitation (cm)") +
+  theme_minimal()
+
+# Plot the trend
+ggplot(annual_prcp_cni, aes(x = year, y = sd_prcp)) +
+  geom_line(color = "blue") +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(title = "Standard Deviation of daily precipitation Trend Chennai",
+       x = "Year",
+       y = "Standard Deviation of daily precipitation (cm)") +
+  theme_minimal()
+
+# Plot the trend
+ggplot(annual_prcp_dlh, aes(x = year, y = sd_prcp)) +
+  geom_line(color = "blue") +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(title = "Standard Deviation of daily precipitation Trend Delhi",
+       x = "Year",
+       y = "Standard Deviation of daily precipitation (cm)") +
+  theme_minimal()
+
+# Plot the trend
+ggplot(annual_prcp_lkn, aes(x = year, y = sd_prcp)) +
+  geom_line(color = "blue") +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(title = "Standard Deviation of daily precipitation Trend Lucknow",
+       x = "Year",
+       y = "Standard Deviation of daily precipitation (cm)") +
+  theme_minimal()
+
+# Plot the trend
+ggplot(annual_prcp_mbi, aes(x = year, y = sd_prcp)) +
+  geom_line(color = "blue") +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(title = "Standard Deviation of daily precipitation Trend Mumbai",
+       x = "Year",
+       y = "Standard Deviation of daily precipitation (cm)") +
+  theme_minimal()
+
+```
+
+For most of the cities in our analysis, there is a slight downward trend in the standard deviation. This indicates that the amount of daily rainfall recieved is normalizing over the years. For city of Mumbai, there is a clear upward trend in the standard deviation. This indicates that in Mumbai, there are days where there is almost no rain and other days when it rains very heavily. Such extreme rain events are also indicative of an overall unstable weather pattern which could be a result of global warming.
+
+
+### Patterns in pollution change in each city
+Now, let's have a look at the pollution data at hand. We will calculate the average annual AQI index for each city and do a combined plot.
+```{r pollution change,echo=TRUE,eval=TRUE}
+aqi_data$year <- as.numeric(format(aqi_data$Date, "%Y"))
+blr_aqi_avg <- aqi_data  %>% 
+  filter(City == "Bengaluru") %>% 
+  group_by(year) %>%
+  summarize(avg_aqi = mean(AQI), sd_aqi = sd(AQI), City = City)
+cni_aqi_avg <- aqi_data  %>% 
+  filter(City == "Chennai") %>% 
+  group_by(year) %>%
+  summarize(avg_aqi = mean(AQI), sd_aqi = sd(AQI), City = City)
+dlh_aqi_avg <- aqi_data  %>% 
+  filter(City == "Delhi") %>% 
+  group_by(year) %>%
+  summarize(avg_aqi = mean(AQI), sd_aqi = sd(AQI), City = City)
+mbi_aqi_avg <- aqi_data  %>% 
+  filter(City == "Mumbai") %>% 
+  group_by(year) %>%
+  summarize(avg_aqi = mean(AQI), sd_aqi = sd(AQI), City = City)
+lkn_aqi_avg <- aqi_data  %>% 
+  filter(City == "Lucknow") %>% 
+  group_by(year) %>%
+  summarize(avg_aqi = mean(AQI), sd_aqi = sd(AQI), City = City)
+
+combined_aqi_data <- rbind(blr_aqi_avg, cni_aqi_avg, dlh_aqi_avg, mbi_aqi_avg, lkn_aqi_avg)
+
+ggplot(combined_aqi_data, aes(x = year, y = avg_aqi, color = City)) +
+  geom_line() +
+  theme_minimal() +
+  labs(title = "Average AQI per year", x = "Year", y = "Average AQI")
+```
+
+As we can see from the plot, for every city, there is a general downward trend in the AQI index. nevertheless, the sudden dip in 2020 must be considered as an anomaly due to Covid lockdowns. But, the general downward trend may be attributed to efforts by the authorities and increased awareness among the population in recent years to curb air pollution.
+
+From the plot, we can also see that among the cities analysed, Delhi and Lucknow have the worst air pollution. Compared to these cities, cities like Bangalore and Chennai fare much better in terms of air pollution.
+Unfortunately, the average AQI in the cities that are comparitively better is still not in the bracket for healthy air quality according to the classification of WHO. This indicates that the air quality in Indian cities is in general unhealthy and even in cities where pollution is lesser, sensitive groups of population might still be prone to negative health effects.
+
+### Best time of the year to visit a city
+Now, we will combine both weather and pollution data to create a model and try to predict the best time of the year to visit a city based on this.
+```{r}
+# Merge AQI and weather data on date and city columns
+combined_weather_data <- rbind(weather_data_blr, weather_data_cni, weather_data_dlh, weather_data_lkn, weather_data_mbi)
+combined_data <- merge(aqi_data, combined_weather_data, by = c("Date", "City"))
+combined_data = subset(combined_data, select = c(Date, City, tavg, prcp, AQI) )
+```
+
+In this new combined dataset, we have weather and pollution parameters for each city. Now, we will add derive the month from the date variable and create a model to predict which month has the best combined parameters for each city.
+
+```{r}
+# Convert Date column to month and year
+combined_data <- combined_data %>%
+  mutate(Month = month(Date, label = TRUE, abbr = TRUE),
+         Year = year(Date))
+
+# Create Linear Model to model Temperature
+temp_model <- lm(tavg ~ AQI + prcp, data = combined_data)
+
+# Summarize the model
+summary(temp_model)
+```
+
+We will create a favorability model as a function of temperature, AQI and precipitation.
+
+```{r}
+# Create a normalized "favorable score"
+pref_temp <- 24
+combined_data <- combined_data %>%
+  mutate(
+    FavorabilityScore = (abs(tavg - pref_temp)) / (max(tavg) - min(tavg)) + 
+                     (AQI - min(AQI)) / (max(AQI) - min(AQI)) +
+                     (prcp - min(prcp)) / (max(prcp) - min(prcp))
+  )
+
+# Model the favorable score
+favorability_model <- lm(FavorabilityScore ~ tavg + AQI + prcp, data = combined_data)
+
+# Predict values
+combined_data$PredictedScore <- predict(favorability_model, newdata = combined_data)
+
+best_months <- combined_data %>%
+  group_by(City) %>%
+  slice_min(PredictedScore)
+
+print(best_months)
+
+```
+
+As we can see, under Indian conditions December/January is the best time to visit most cities. During this time, the combination of AQI, temperature and precipitation is the best suited for outdoor activities.
+
+
+### Correlation between weather and pollution
+In the last step, we will check if there is a correlation between weather paramters and pollution.
+```{r correlation, echo=TRUE, eval=TRUE}
+weather_aqi_corr <- combined_data %>%
+  select(AQI, tavg, prcp) %>%
+  cor()
+
+weather_aqi_corr
+```
+As evident from the correlation values, there is some correlation between weather parameters and AQI value. Both temperature and precipitation are negatively correlated to the AQI values. That means when temperature or precipitation is high, the AQI value tends to decrease and vice-versa. The temperature has a higher correlation to air quality compared to precipitation.
+
+## Outcomes
+* We observed that there is a clear increase in average temperature among all cities, indicating effects of global warming.
+* There is also an increase in precipitation among all the cities. In some cities, e.g. Mumabi an increased standard deviation in precipitation was observed. This indicates increase in extreme weather events that might explain flooding in recent years.
+* In general, all the cities in our analysis have bad air quality. Lucknow and Delhi fared worse compared to other cities.
+* All cities have air quality that is classified as risky by WHO classification.
+* The Average AQI is improving in general over the past years.
+* Sudden drop in AQI index could be observed in 2020 that may be explained by COVID lockdowns.
+* It is possible to identify the most suitable time of the year to visit each city considering weather and pollution parameters.
+* There is some correlation between weather parameters and air qualiity index.
+
+## Results and Discussions
+In this mini-project weather and air quality data from various Indian cities over an extended period were analyzed and modelled with the air to answer some key questions.
+
+The provided dataset was found to be usable for the datapoints that were relevant for this analysis. The missing data points were imputed using linear modelling method. Further data preprocessing was done to ensure date format matched between datasets.
+
+In my analysis, I could prove a clear upward trend in annual average temperature in every Indian city. This is a clear indication of effects of global warming and unsuperwised urbanization in Indian context.
+
+There is also a clear increase in precipitation in all the Indian cities. Eventhough this does not seem to be an issue at first glance, for some cities, a clear increase in the standard deviation of precipitation could be observed. This is indicative of extreme weather events leading to catastrophic results suc has flash floods..
+
+The second dataset provided datapoints for air quality from a number of Indian cities. Poor air quality could be observed among all the cities that came under my analysis. The air quality could be obsered to be falling under risk category as per WHO classification.
+
+The year over year change in AQI index seems to be in the positive direction in my analysis. A clear drop in AQI could be observed in 2020 arguably due to COVID lockdowns. This further underlines the point that the bad air quality can be attributed to uncontrolled urbanization and increase in vehicular traffic in Indian cities. This should also be a pointer for the authorities to take action towards promoting public transprt and less polluting modes of transporation such as electric vehicles.
+
+By combining weather and air quality data, i could also create model to predict the favorability score to visit each city. Based on this score, the most ideal time to visit each city and for outdoor activities in that region could be identified.
+
+Furthermore, I could identify a correlation between weather parameters and AQI index. This might be direct correlation or indirect such as human actions during different climates.
+
+Overall, this analysis highlights critical environmental trends, offering data-driven insights into climate change, air pollution management, and optimal travel timing for Indian cities.
